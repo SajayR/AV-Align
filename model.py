@@ -114,35 +114,6 @@ class AudioVisualModel(nn.Module):
         #print("Contrastive loss", contrastive_loss)
         return total_loss
     
-        '''def compute_regularization_losses(self, clip_sims, token_sims):
-        """Compute regularization terms"""
-        
-        # 1. Non-negative pressure with clamped range
-        neg_sims = torch.clamp(token_sims, min=-20, max=0)  
-        l_nonneg = torch.mean(neg_sims ** 2)
-        
-        # 2. Temperature/Calibration stability using softplus for smoother gradients
-        #l_cal = F.softplus(1.0 - self.temperature) + F.softplus(self.temperature - 5.0)
-        l_cal = torch.clamp(torch.log(torch.tensor(1.1, device=token_sims.device)) - torch.log(self.temperature), min=0) ** 8
-        
-        # 3. Spatial smoothness using L1 norm
-        spatial_diffs = token_sims[..., 1:] - token_sims[..., :-1]
-        l_spatial = torch.mean(torch.abs(spatial_diffs))
-        
-        # 4. Sparsity loss with polynomial growth
-        attn_norm = torch.sigmoid(token_sims)  # [B, B, Na, Nv]
-        threshold = 0.5  # Attention threshold
-        above_threshold = F.relu(attn_norm - threshold)
-        num_high_attn = torch.sum(above_threshold, dim=-1)  # [B, B, Na]
-        l_sparsity = torch.mean(num_high_attn ** 2)  # Polynomial instead of exponential
-        
-        # Combine with reduced weights
-        reg_loss = (0.1 * l_nonneg + 
-                    10 * l_cal + 
-                    0.001 * l_spatial + 
-                    0.001 * l_sparsity)
-                    
-        return reg_loss'''
 
     def compute_regularization_losses(self, clip_sims, token_sims):
             # 1. Non-negative pressure (unchanged)
@@ -172,10 +143,10 @@ class AudioVisualModel(nn.Module):
             
             l_sparsity = torch.mean(num_high_attn ** 2) - 0.1 * torch.mean(normalized_entropy)
             
-            reg_loss = (0.15 * l_nonneg + 
-                        8.0 * l_cal + 
-                        0.01 * l_spatial +
-                        0.005 * l_sparsity)
+            reg_loss = ( 8.0 * l_cal )                 #                 0.15 * l_nonneg + 
+                         #+ 
+                        #0.01 * l_spatial +
+                        #0.005 * l_sparsity)
             
             return reg_loss
         

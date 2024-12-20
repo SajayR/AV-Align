@@ -274,8 +274,8 @@ class AudioVisualTrainer:
             if wandb_run_id is not None:
                 wandb.init(
                     project="DenseSpeed",
-                    id=wandb_run_id,
-                    resume="must"
+                    #id=wandb_run_id,
+                    #resume="must"
                 )
             else:
                 wandb.init(
@@ -536,7 +536,7 @@ if __name__ == "__main__":
         num_vis_samples=20,
         gradient_accumulation_steps=1,
         vis_every=5000,
-        num_workers=10,
+        num_workers=12,
         force_new_training=False,
         unfreeze_hubert_epoch=2,
         unfreeze_vit_epoch=5,

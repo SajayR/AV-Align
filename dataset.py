@@ -48,7 +48,7 @@ def extract_audio_from_video(video_path: Path) -> torch.Tensor:
         #gc.collect()
         #torch.cuda.empty_cache()
 
-def load_and_preprocess_video(video_path: str, sample_fps: int) -> torch.Tensor:
+'''def load_and_preprocess_video(video_path: str, sample_fps: int) -> torch.Tensor:
     """Load only one random frame from the 1s video using PyAV, resize, and normalize."""
     container = av.open(video_path)
     video_stream = container.streams.video[0]
@@ -77,6 +77,57 @@ def load_and_preprocess_video(video_path: str, sample_fps: int) -> torch.Tensor:
     #video_stream.codec_context.close()
 
     # Convert to tensor, resize, and normalize
+    frame_tensor = torch.from_numpy(decoded_frame).permute(2, 0, 1).float() / 255.0
+    frame_tensor = torch.nn.functional.interpolate(
+        frame_tensor.unsqueeze(0), size=(224, 224), mode='bilinear', align_corners=False
+    ).squeeze(0)
+    frame_tensor = (frame_tensor - IMAGENET_MEAN) / IMAGENET_STD
+
+    return frame_tensor'''
+
+def load_and_preprocess_video(video_path: str, sample_fps: int) -> torch.Tensor:
+    """Load only one random frame from the 1s video using PyAV, resize, and normalize."""
+    container = av.open(video_path)
+    video_stream = container.streams.video[0]
+
+    original_fps = float(video_stream.average_rate)
+    video_duration = 1.0
+    num_original_frames = int(round(original_fps * video_duration))
+
+    # Compute frame indices as before
+    desired_frame_count = int(video_duration * sample_fps)  # equals sample_fps
+    frame_indices = np.linspace(0, num_original_frames - 1, desired_frame_count, dtype=int)
+    chosen_index = frame_indices[np.random.randint(0, desired_frame_count)]
+
+    # Calculate PTS for chosen frame
+    chosen_time_seconds = chosen_index / original_fps
+    chosen_pts = int(chosen_time_seconds / video_stream.time_base)
+
+    # Seek and find closest frame
+    container.seek(chosen_pts, stream=video_stream, any_frame=False, backward=True)
+    
+    closest_frame = None
+    min_pts_diff = float('inf')
+    
+    # Find frame closest to our target PTS
+    for frame in container.decode(video_stream):
+        pts_diff = abs(frame.pts - chosen_pts)
+        
+        if pts_diff < min_pts_diff:
+            min_pts_diff = pts_diff
+            closest_frame = frame
+        
+        # If we've gone too far past our target, stop
+        if frame.pts > chosen_pts + original_fps/10:  # Allow 1/10th second overshoot
+            break
+    
+    container.close()
+
+    if closest_frame is None:
+        raise ValueError(f"Failed to find appropriate frame for index {chosen_index}")
+    
+    # Convert to tensor, resize, and normalize
+    decoded_frame = closest_frame.to_rgb().to_ndarray()
     frame_tensor = torch.from_numpy(decoded_frame).permute(2, 0, 1).float() / 255.0
     frame_tensor = torch.nn.functional.interpolate(
         frame_tensor.unsqueeze(0), size=(224, 224), mode='bilinear', align_corners=False

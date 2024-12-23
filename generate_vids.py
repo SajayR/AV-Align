@@ -12,18 +12,15 @@ def find_latest_checkpoint(output_dir):
     checkpoints = list(Path(output_dir).glob('checkpoint_epoch*.pt'))
     if not checkpoints:
         return None
-    
     latest = max(checkpoints, key=lambda x: (
-        int(str(x).split('epoch')[1].split('_')[0]),  # epoch number
-        int(str(x).split('step')[1].split('.')[0])    # step number
+        int(str(x).split('epoch')[1].split('_')[0]),  
+        int(str(x).split('step')[1].split('.')[0])   
     ))
     return latest
 
 def load_model(checkpoint_path=None, output_dir=None, device='cuda'):
     """Load model from checkpoint"""
     model = AudioVisualModel().to(device)
-    
-    # Find checkpoint path if not provided
     if checkpoint_path is None and output_dir is not None:
         checkpoint_path = find_latest_checkpoint(output_dir)
         if checkpoint_path is None:
@@ -39,15 +36,10 @@ def load_model(checkpoint_path=None, output_dir=None, device='cuda'):
 
 def generate_video(model, video_path, output_path, fps=50, device='cuda'):
     """Generate attention visualization video for a single video"""
-    # Load and preprocess video and audio
     audio = extract_audio_from_video(video_path).to(device)
     video_frames = load_and_preprocess_video(str(video_path), sample_fps=20).to(device)
-    
-    # Add batch dimension
     audio = audio.unsqueeze(0)
     video_frames = video_frames.unsqueeze(0)
-    
-    # Create visualization
     visualizer = AudioVisualizer()
     visualizer.make_attention_video(
         model,
@@ -57,7 +49,6 @@ def generate_video(model, video_path, output_path, fps=50, device='cuda'):
         video_path=str(video_path),
         fps=fps
     )
-    
     print(f"Generated visualization: {output_path}")
 
 def process_videos(
@@ -82,14 +73,9 @@ def process_videos(
         fps: Frames per second for output videos
         device: Device to run model on ('cuda' or 'cpu')
     """
-    # Setup
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Load model
     model = load_model(checkpoint_path, checkpoint_dir, device)
-    
-    # Get list of videos to process
     if video_paths:
         videos_to_process = [Path(p) for p in video_paths]
     elif video_dir:
@@ -97,8 +83,6 @@ def process_videos(
         videos_to_process = random.sample(all_videos, min(num_random, len(all_videos)))
     else:
         raise ValueError("Must provide either video_paths or video_dir")
-    
-    # Process each video
     for video_path in videos_to_process:
         output_path = output_dir / f'attention_{video_path.stem}.mp4'
         try:
@@ -108,8 +92,6 @@ def process_videos(
             continue
 
 if __name__ == "__main__":
-    # Example usage:
-    
     # Option 1: Process specific videos
     video_list = [
         '/path/to/video1.mp4',

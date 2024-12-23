@@ -1,13 +1,70 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from vit import ViTEmbedder
-from hubert import AudioEmbedder
+import timm
+from transformers import HubertModel, AutoProcessor
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import warnings
 warnings.filterwarnings("ignore")
+
+class ViTEmbedder(nn.Module):
+    def __init__(self, model_name='vit_base_patch16_224', pretrained=True):
+        super().__init__()
+        
+        self.model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14') #torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14')
+        self.projection = nn.Linear(model.embed_dim, 512)
+        
+        for param in self.model.parameters():
+            param.requires_grad = True
+            
+    def forward(self, x):
+        """
+        Args:
+            x: (batch_size, channels, height, width)
+        Returns:
+            patch_embeddings: (batch_size, num_patches, embedding_dim)
+        """
+        x = self.model.get_intermediate_layers(x, n=1)[0]
+        x = self.projection(x)
+        return x
+
+class AudioEmbedder(nn.Module):
+    def __init__(self, embedding_dim=512):
+        super().__init__()
+        self.processor = AutoProcessor.from_pretrained("facebook/hubert-large-ls960-ft")
+        self.hubert = HubertModel.from_pretrained("facebook/hubert-base-ls960") #model name: facebook/hubert-large-ls960-ft
+        self.projection = nn.Linear(self.hubert.config.hidden_size, embedding_dim)  
+        for param in self.hubert.parameters():
+            param.requires_grad = True
+        for param in self.projection.parameters():
+            param.requires_grad = True
+        
+    def forward(self, audio_input):
+        """
+        Args:
+            audio_input: (B, T) raw audio waveform at 16kHz
+            
+        Returns:
+            features: (B, Na, D) where:
+                B is batch size
+                Na is number of audio tokens
+                D is embedding_dim
+        """
+        inputs = self.processor(
+            audio_input, 
+            return_tensors="pt",
+            sampling_rate=16000,
+            padding=True,
+            return_attention_mask=True
+        ).input_values.squeeze(0)
+        inputs = inputs.to(audio_input.device)
+        hubert_output = self.hubert(inputs).last_hidden_state  # (B, T/320, 1024)
+        features = self.projection(hubert_output)  # (B, T/320, embedding_dim)
+        
+        return features
+
 class AudioVisualModel(nn.Module):
     def __init__(self, temperature=2.0):
         super().__init__()
@@ -15,11 +72,9 @@ class AudioVisualModel(nn.Module):
         self.visual_embedder = ViTEmbedder()
         self.audio_embedder = AudioEmbedder()
         self.temperature = nn.Parameter(torch.tensor(temperature))
-        
-        # Unfreeze the HuBERT model
+
         for param in self.audio_embedder.hubert.parameters():
             param.requires_grad = True
-        
         for param in self.audio_embedder.projection.parameters():
             param.requires_grad = True
         
@@ -34,22 +89,12 @@ class AudioVisualModel(nn.Module):
         Returns:
             similarity_matrix: (B, Na, Nv)
         """
-        # Normalize embeddings
-        #print("Audio feats stats before norm - min:", audio_feats.min().item(), "max:", audio_feats.max().item())
-        #print("Visual feats stats before norm - min:", visual_feats.min().item(), "max:", visual_feats.max().item())
-        
-        # Normalize embeddings
-        audio_feats = F.normalize(audio_feats, dim=-1)  #this has to be checked if we wanna fucking normalize the embeddings
-        visual_feats = F.normalize(visual_feats, dim=-1) #same
-        
-        # Compute similarities and check values
+        audio_feats = F.normalize(audio_feats, dim=-1)  
+        visual_feats = F.normalize(visual_feats, dim=-1)
         similarity = torch.bmm(audio_feats, visual_feats.transpose(1, 2))
-        #print("Raw similarity stats - min:", similarity.min().item(),
-          #  "max:", similarity.max().item())
-        
         return similarity / self.temperature
     
-    def aggregate_token_similarities(self, similarity_matrix): #also take this
+    def aggregate_token_similarities(self, similarity_matrix):
         """
         Aggregate token-level similarities using max-mean strategy
         
@@ -59,10 +104,7 @@ class AudioVisualModel(nn.Module):
         Returns:
             clip_similarity: (B)
         """
-        # Max pool over visual dimension for each audio token
         max_similarities = torch.max(similarity_matrix, dim=2)[0]  # (B, Na)
-        
-        # Average over audio tokens
         clip_similarity = torch.mean(max_similarities, dim=1)  # (B)
         return clip_similarity
     
@@ -72,19 +114,14 @@ class AudioVisualModel(nn.Module):
         
         audio_feats = audio_feats.unsqueeze(1).expand(-1, B, -1, -1)
         visual_feats = visual_feats.unsqueeze(0).expand(B, -1, -1, -1)
-        #print("During compute_all_similarities")
-        #print(audio_feats.shape, visual_feats.shape)
-        # Normalize features
         audio_feats = F.normalize(audio_feats, dim=-1)
         visual_feats = F.normalize(visual_feats, dim=-1)
         
-        # Compute token-level similarities
+        # token-level similarities
         token_sims = torch.matmul(
             audio_feats, 
             visual_feats.transpose(2, 3)
         ) / self.temperature
-        
-        # Aggregate using max-mean strategy
         max_sims = torch.max(token_sims, dim=3)[0]  # Max over visual dimension (B, B, Na)
         clip_sims = torch.mean(max_sims, dim=2)     # Mean over audio dimension (B, B)
         
@@ -94,24 +131,16 @@ class AudioVisualModel(nn.Module):
         """Compute InfoNCE loss with regularization"""
         batch_size = clip_similarities.shape[0]
         labels = torch.arange(batch_size).to(clip_similarities.device)
-        
         # Audio to Visual direction
         log_prob_a2v = F.log_softmax(clip_similarities, dim=1)
         losses_a2v = -log_prob_a2v[torch.arange(batch_size), labels]
-        
         # Visual to Audio direction  
         log_prob_v2a = F.log_softmax(clip_similarities.t(), dim=1)
         losses_v2a = -log_prob_v2a[torch.arange(batch_size), labels]
-        
         # Average both directions
         contrastive_loss = (losses_a2v + losses_v2a).mean() / 2
-        
-        # Add regularization
-        reg_loss = self.compute_regularization_losses(clip_similarities, token_sims)
-        
+        reg_loss = self.compute_regularization_losses(clip_similarities, token_sims)    
         total_loss = contrastive_loss + reg_loss
-        #print("Regularization loss", reg_loss)
-        #print("Contrastive loss", contrastive_loss)
         return total_loss
     
 
@@ -123,31 +152,9 @@ class AudioVisualModel(nn.Module):
             # 2. Temperature regularization (fixed to handle both bounds)
             temp_low = torch.clamp(torch.log(torch.tensor(2.3, device=token_sims.device)) - torch.log(self.temperature), min=0) ** 4
             temp_high = torch.clamp(torch.log(self.temperature) - torch.log(torch.tensor(4.0, device=token_sims.device)), min=0) ** 4
-            l_cal = temp_low + temp_high
-            
-            # 3. Spatial smoothness only (removed incorrect temporal)
-            spatial_diffs = token_sims[..., 1:] - token_sims[..., :-1]
-            l_spatial = torch.mean(spatial_diffs ** 2)
-            
-            # 4. Sparsity with normalized entropy
-            attn_norm = torch.sigmoid(token_sims)
-            threshold = 0.5
-            above_threshold = F.relu(attn_norm - threshold)
-            num_high_attn = torch.sum(above_threshold, dim=-1)
-            
-            attn_dist = F.softmax(token_sims, dim=-1)
-            entropy = -(attn_dist * torch.log(attn_dist + 1e-10)).sum(dim=-1)
-            # Normalize entropy by maximum possible entropy (log of number of elements)
-            max_entropy = torch.log(torch.tensor(attn_dist.size(-1), dtype=torch.float, device=token_sims.device))
-            normalized_entropy = entropy / max_entropy
-            
-            l_sparsity = torch.mean(num_high_attn ** 2) - 0.1 * torch.mean(normalized_entropy)
-            
-            reg_loss = ( 8.0 * l_cal )                 #                 0.15 * l_nonneg + 
-                         #+ 
-                        #0.01 * l_spatial +
-                        #0.005 * l_sparsity)
-            
+            l_cal = temp_low + temp_high 
+
+            reg_loss = ( 8.0 * l_cal + 0.15 * l_nonneg)
             return reg_loss
         
     def forward(self, frames, audio):
@@ -161,33 +168,23 @@ class AudioVisualModel(nn.Module):
         Returns:
             loss if training, clip_similarities if not
         """
-        # Get embeddings
         visual_feats = self.visual_embedder(frames)
         audio_feats = self.audio_embedder(audio)
         
         if self.training:
-            # Get similarities and token-level similarities
             clip_sims, token_sims = self.compute_all_similarities(audio_feats, visual_feats)
             return self.compute_contrastive_loss(clip_sims, token_sims)
         else:
-            # During inference, just get clip similarities
             token_sims = self.compute_similarity_matrix(audio_feats, visual_feats)
             return token_sims
 
 if __name__ == "__main__":
-    # Test the model
     model = AudioVisualModel()
-    
-    # Create dummy batch
     batch_size = 4
     frames = torch.randn(batch_size, 3, 224, 224)
     audio = torch.randn(batch_size, 16331)
-    
-    # Test training mode
     loss = model(frames, audio)
     print(f"Training loss: {loss.item()}")
-    
-    # Test inference mode
     model.eval()
     
     similarities = model(frames, audio)

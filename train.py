@@ -31,7 +31,7 @@ def collate_fn(batch):
         'audio': audio_padded,
         'vid_nums': [item['vid_num'] for item in batch],
         'segment_nums': [item['segment_num'] for item in batch],
-        'video_paths': [str(item['video_path']) for item in batch]  # Convert PosixPath to string
+        'video_paths': [str(item['video_path']) for item in batch]  
     }
 
 class AudioVisualTrainer:
@@ -107,13 +107,11 @@ class AudioVisualTrainer:
             prefetch_factor=6
         )
         
-        # Initially freeze Vision and HuBERT parameters
+        # Initially freeze
         for param in self.model.visual_embedder.model.parameters():
             param.requires_grad = False
         for param in self.model.audio_embedder.hubert.parameters():
             param.requires_grad = False
-
-        # Separate parameter groups
         projection_params = []
         temperature_params = []
         hubert_params = []
@@ -131,7 +129,6 @@ class AudioVisualTrainer:
             else:
                 projection_params.append(param)
 
-        # Create separate optimizers
         self.optimizer_projection = torch.optim.AdamW(
             [
                 {'params': projection_params, 'lr': 1e-3},
@@ -145,9 +142,7 @@ class AudioVisualTrainer:
             [{'params': vit_params, 'lr': 8e-5}]
         )
 
-        # Total training steps
         num_training_steps = len(self.dataloader) * self.config['num_epochs']
-
         self.scheduler_projection = torch.optim.lr_scheduler.OneCycleLR(
             self.optimizer_projection,
             max_lr=self.config['learning_rate'],
@@ -157,7 +152,6 @@ class AudioVisualTrainer:
             final_div_factor=1e4,
             anneal_strategy='cos'
         )
-
         self.scheduler_hubert = None
         self.scheduler_vit = None
 
@@ -194,7 +188,6 @@ class AudioVisualTrainer:
         checkpoints = list(self.output_dir.glob('checkpoint_epoch*.pt'))
         if not checkpoints:
             return None
-        # Sort by epoch and step
         def parse_ckpt(ck):
             name = ck.name
             epoch_str = name.split('epoch')[1].split('_')[0]
@@ -239,7 +232,6 @@ class AudioVisualTrainer:
         temp_path = checkpoint_path.with_suffix('.temp.pt')
         torch.save(checkpoint, temp_path)
         temp_path.rename(checkpoint_path)
-        
         self.logger.info(f'Saved checkpoint to {checkpoint_path}')
         print(f"Saved checkpoint for epoch {epoch} and step {step}.")
 
@@ -248,17 +240,13 @@ class AudioVisualTrainer:
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
         
         self.model.load_state_dict(checkpoint['model_state_dict'])
-
         self.start_epoch = checkpoint['epoch']
         self.global_step = checkpoint['step']
         self.best_loss = checkpoint['best_loss']
         self.config.update(checkpoint.get('config', {}))
-        
-
         self.optimizer_projection.load_state_dict(checkpoint['optimizer_projection_state_dict'])
         if checkpoint.get('scheduler_projection_state_dict') is not None:
             self.scheduler_projection.load_state_dict(checkpoint['scheduler_projection_state_dict'])
-
         self.optimizer_hubert.load_state_dict(checkpoint['optimizer_hubert_state_dict'])
         self.optimizer_vit.load_state_dict(checkpoint['optimizer_vit_state_dict'])
 
@@ -274,8 +262,8 @@ class AudioVisualTrainer:
             if wandb_run_id is not None:
                 wandb.init(
                     project="DenseSpeed",
-                    #id=wandb_run_id,
-                    #resume="must"
+                    id=wandb_run_id,
+                    resume="must"
                 )
             else:
                 wandb.init(
@@ -286,8 +274,6 @@ class AudioVisualTrainer:
 
         current_epoch = self.start_epoch
         dataloader_len = len(self.dataloader)
-
-        # Re-initialize schedulers if needed
         if (checkpoint.get('scheduler_hubert_state_dict') is not None) and (checkpoint['scheduler_hubert_state_dict'] is not None):
             self.scheduler_hubert = torch.optim.lr_scheduler.OneCycleLR(
                 self.optimizer_hubert,
@@ -311,8 +297,6 @@ class AudioVisualTrainer:
                 anneal_strategy='cos'
             )
             self.scheduler_vit.load_state_dict(checkpoint['scheduler_vit_state_dict'])
-
-        # Ensure freeze states are correct after loading
         self._set_freeze_state(self.start_epoch)
 
         print(f"Resumed from epoch {self.start_epoch} (step {self.global_step})")
@@ -409,11 +393,8 @@ class AudioVisualTrainer:
         dataloader_len = len(self.dataloader)
 
         for epoch in range(self.start_epoch, total_epochs):
-            # Ensure freeze/unfreeze state is correct for this epoch
             self._set_freeze_state(epoch)
-
             print(f"Epoch {epoch}")
-
             self.model.train()
             epoch_losses = []
 
@@ -421,21 +402,6 @@ class AudioVisualTrainer:
             for name, param in self.model.named_parameters():
                 if param.requires_grad:
                     print(f"  {name}")
-
-            # Determine if we need to skip batches due to checkpoint resume
-            #steps_done_in_current_epoch = self.global_step - (epoch * dataloader_len)
-            #if steps_done_in_current_epoch < 0:
-            #    steps_done_in_current_epoch = 0
-
-            #if steps_done_in_current_epoch > 0 and steps_done_in_current_epoch < dataloader_len:
-            #    print("Initializing dataloader iterator")
-            #    dataloader_iter = iter(self.dataloader)
-            #    print(f"Skipping {steps_done_in_current_epoch} steps")
-            #    for _ in tqdm(range(steps_done_in_current_epoch), desc="Skipping steps"):
-            #        next(dataloader_iter)
-            #    pbar = tqdm(dataloader_iter, desc=f'Epoch {epoch}', initial=steps_done_in_current_epoch, total=dataloader_len)
-            #else:
-            #    pbar = tqdm(self.dataloader, desc=f'Epoch {epoch}')
             pbar = tqdm(self.dataloader, desc=f'Epoch {epoch}')
 
             for batch in pbar:
@@ -519,8 +485,6 @@ class AudioVisualTrainer:
                     'epoch': epoch,
                     'projection_lr': self.optimizer_projection.param_groups[0]['lr'],
                 })
-
-            # Save checkpoint every epoch
             self.save_checkpoint(epoch, self.global_step)
 
         print("Training completed!")

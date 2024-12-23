@@ -14,9 +14,24 @@ import matplotlib.pyplot as plt
 import psutil
 import gc
 import warnings
-warnings.filterwarnings("ignore")
+from pathlib import Path
+import yaml
+import argparse
 import time
+warnings.filterwarnings("ignore")
 torch.cuda.empty_cache()
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Train audio-visual model')
+    parser.add_argument('--config', type=str, required=True, help='Path to config file')
+    return parser.parse_args()
+    
+def load_config(config_path):
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    return config
+
 def collate_fn(batch):
     # Get all tokens (already processed)
     video_tokens = torch.stack([item['video_frames'] for item in batch])
@@ -53,28 +68,30 @@ class AudioVisualTrainer:
         unfreeze_vit_epoch: int = 20,
         save_every_steps: int = 3000
     ):
-        self.output_dir = Path(output_dir)
+        self.output_dir = Path(config['training']['output_dir'])
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.vis_every = vis_every
-        self.device = device
-        self.use_wandb = use_wandb
-        self.num_vis_samples = num_vis_samples
-        self.gradient_accumulation_steps = gradient_accumulation_steps
-        self.model = AudioVisualModel().to(device)
-        self.save_every_steps = save_every_steps
         
+        # Store all config
         self.config = {
-            'batch_size': batch_size,
-            'learning_rate': learning_rate,
-            'num_epochs': num_epochs,
-            'num_workers': num_workers,
-            'vis_every': vis_every,
-            'num_vis_samples': num_vis_samples,
-            'gradient_accumulation_steps': gradient_accumulation_steps,
-            'unfreeze_hubert_epoch': unfreeze_hubert_epoch,
-            'unfreeze_vit_epoch': unfreeze_vit_epoch,
-            'save_every_steps': save_every_steps
+            'batch_size': config['training']['batch_size'],
+            'learning_rate': config['training']['learning_rate'],
+            'num_epochs': config['training']['num_epochs'],
+            'num_workers': config['training']['num_workers'],
+            'gradient_accumulation_steps': config['training']['gradient_accumulation_steps'],
+            'save_every_steps': config['training']['save_every_steps'],
+            'unfreeze_hubert_epoch': config['model']['unfreeze_hubert_epoch'],
+            'unfreeze_vit_epoch': config['model']['unfreeze_vit_epoch'],
+            'vis_every': config['visualization']['vis_every'],
+            'num_vis_samples': config['visualization']['num_vis_samples']
         }
+        
+        # Set class attributes
+        self.vis_every = config['visualization']['vis_every']
+        self.device = config['training'].get('device', 'cuda')
+        self.use_wandb = config['wandb']['enabled']
+        self.num_vis_samples = config['visualization']['num_vis_samples']
+        self.gradient_accumulation_steps = config['training']['gradient_accumulation_steps']
+        self.save_every_steps = config['training']['save_every_steps']
 
         logging.basicConfig(
             filename=str(self.output_dir / 'training.log'),
@@ -88,7 +105,7 @@ class AudioVisualTrainer:
         self.best_loss = float('inf')
 
         self.dataset = AudioVisualDataset(
-            data_root=video_dir,
+            data_root=config['training']['video_dir'],
             sample_fps=20
         )
 
@@ -490,20 +507,9 @@ class AudioVisualTrainer:
         print("Training completed!")
 
 if __name__ == "__main__":
-    trainer = AudioVisualTrainer(
-        video_dir='/home/cisco/nvmefudge/vggsound_1seconds',
-        output_dir='./outputs',
-        batch_size=48,
-        num_epochs=100,
-        learning_rate=8e-4,
-        use_wandb=True,
-        num_vis_samples=20,
-        gradient_accumulation_steps=1,
-        vis_every=5000,
-        num_workers=12,
-        force_new_training=False,
-        unfreeze_hubert_epoch=2,
-        unfreeze_vit_epoch=5,
-        save_every_steps=4000
-    )
+    args = parse_args()
+    with open(args.config, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    trainer = AudioVisualTrainer(config)
     trainer.train()

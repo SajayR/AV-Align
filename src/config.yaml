@@ -1,0 +1,25 @@
+# config.yaml
+training:
+  video_dir: '/home/cisco/nvmefudge/vggsound_1seconds'
+  output_dir: './outputs'
+  batch_size: 48
+  num_epochs: 100
+  learning_rate: 8e-4
+  num_workers: 12
+  gradient_accumulation_steps: 1
+  save_every_steps: 4000
+  device: 'cuda'
+  force_new_training: false
+
+model:
+  unfreeze_hubert_epoch: 2
+  unfreeze_vit_epoch: 5
+
+visualization:
+  vis_every: 5000
+  num_vis_samples: 20
+
+wandb:
+  enabled: true
+  project: "DenseSpeed"
+  run_name: "DenseHack"

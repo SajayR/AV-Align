@@ -1,0 +1,21 @@
+# Core Deep Learning
+torch>=2.4.0
+torchaudio>=2.4.0
+torchvision>=0.20.0
+timm>=0.4.12
+transformers>=4.45.1
+av>=14.0.0
+ffmpeg-python>=0.2.0
+moviepy>=1.0.3
+librosa>=0.10.2
+matplotlib>=3.9.2
+numpy>=2.1.3
+opencv-python>=4.10.0
+wandb>=0.18.3
+tqdm>=4.66.5
+
+
+# For NVIDIA users:
+# cuda-toolkit>=11.8
+# For AMD users:
+# ROCm>=6.2

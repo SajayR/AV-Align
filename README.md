@@ -30,9 +30,9 @@ Learned attention maps from an extremely early checkpoint:
 ## Usage
 
 ```markdown
-## Usage
+Usage
 
-### Dataset Preparation
+Dataset Preparation
 The model expects video data to be preprocessed into 1-second segments with a specific naming convention:
 ```python
 {vid_num}_{segment_num}.mp4

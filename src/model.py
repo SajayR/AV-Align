@@ -89,8 +89,8 @@ class AudioVisualModel(nn.Module):
         Returns:
             similarity_matrix: (B, Na, Nv)
         """
-        audio_feats = F.normalize(audio_feats, dim=-1)  
-        visual_feats = F.normalize(visual_feats, dim=-1)
+        #audio_feats = F.normalize(audio_feats, dim=-1)  
+        #visual_feats = F.normalize(visual_feats, dim=-1)
         similarity = torch.bmm(audio_feats, visual_feats.transpose(1, 2))
         return similarity / self.temperature
     
@@ -114,8 +114,8 @@ class AudioVisualModel(nn.Module):
         
         audio_feats = audio_feats.unsqueeze(1).expand(-1, B, -1, -1)
         visual_feats = visual_feats.unsqueeze(0).expand(B, -1, -1, -1)
-        audio_feats = F.normalize(audio_feats, dim=-1)
-        visual_feats = F.normalize(visual_feats, dim=-1)
+        #audio_feats = F.normalize(audio_feats, dim=-1)
+        #visual_feats = F.normalize(visual_feats, dim=-1)
         
         # token-level similarities
         token_sims = torch.matmul(

@@ -14,7 +14,7 @@ class ViTEmbedder(nn.Module):
         super().__init__()
         
         self.model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14') #torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14')
-        self.projection = nn.Linear(model.embed_dim, 512)
+        self.projection = nn.Linear(self.model.embed_dim, 512)
         
         for param in self.model.parameters():
             param.requires_grad = True
@@ -89,8 +89,8 @@ class AudioVisualModel(nn.Module):
         Returns:
             similarity_matrix: (B, Na, Nv)
         """
-        audio_feats = F.normalize(audio_feats, dim=-1)  
-        visual_feats = F.normalize(visual_feats, dim=-1)
+        #audio_feats = F.normalize(audio_feats, dim=-1)  
+        #visual_feats = F.normalize(visual_feats, dim=-1)
         similarity = torch.bmm(audio_feats, visual_feats.transpose(1, 2))
         return similarity / self.temperature
     
@@ -114,8 +114,8 @@ class AudioVisualModel(nn.Module):
         
         audio_feats = audio_feats.unsqueeze(1).expand(-1, B, -1, -1)
         visual_feats = visual_feats.unsqueeze(0).expand(B, -1, -1, -1)
-        audio_feats = F.normalize(audio_feats, dim=-1)
-        visual_feats = F.normalize(visual_feats, dim=-1)
+        #audio_feats = F.normalize(audio_feats, dim=-1)
+        #visual_feats = F.normalize(visual_feats, dim=-1)
         
         # token-level similarities
         token_sims = torch.matmul(
@@ -150,7 +150,7 @@ class AudioVisualModel(nn.Module):
             l_nonneg = torch.mean(neg_sims ** 2)
             
             # 2. Temperature regularization (fixed to handle both bounds)
-            temp_low = torch.clamp(torch.log(torch.tensor(2.3, device=token_sims.device)) - torch.log(self.temperature), min=0) ** 4
+            temp_low = torch.clamp(torch.log(torch.tensor(1.0, device=token_sims.device)) - torch.log(self.temperature), min=0) ** 4
             temp_high = torch.clamp(torch.log(self.temperature) - torch.log(torch.tensor(4.0, device=token_sims.device)), min=0) ** 4
             l_cal = temp_low + temp_high 
 

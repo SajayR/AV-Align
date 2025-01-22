@@ -18,7 +18,7 @@ warnings.filterwarnings("ignore")
 import time
 torch.cuda.empty_cache()
 def collate_fn(batch):
-    # Get all tokens (already processed)
+    # Get all tokens (already processed)it
     video_tokens = torch.stack([item['video_frames'] for item in batch])
     max_audio_len = max(item['audio'].shape[0] for item in batch)
     audio_padded = torch.zeros(len(batch), max_audio_len)
@@ -162,7 +162,7 @@ class AudioVisualTrainer:
                 pass
             else:
                 wandb.init(
-                    project="DenseSpeed",
+                    project="DenseSpeedUnNorm",
                     name="DenseHack",
                     config=self.config
                 )
@@ -178,7 +178,7 @@ class AudioVisualTrainer:
         if self.use_wandb and wandb.run is None:
             print("No wandb run found, initializing new run")
             wandb.init(
-                project="DenseSpeed",
+                project="DenseSpeedUnNorm",
                 name="DenseHack",
                 config=self.config
             )
@@ -261,13 +261,13 @@ class AudioVisualTrainer:
             wandb_run_id = checkpoint.get('wandb_run_id')
             if wandb_run_id is not None:
                 wandb.init(
-                    project="DenseSpeed",
+                    project="DenseSpeedUnNorm",
                     id=wandb_run_id,
                     resume="must"
                 )
             else:
                 wandb.init(
-                    project="DenseSpeed",
+                    project="DenseSpeedUnNorm",
                     name=f"DenseHack",
                     config=self.config
                 )
@@ -491,19 +491,19 @@ class AudioVisualTrainer:
 
 if __name__ == "__main__":
     trainer = AudioVisualTrainer(
-        video_dir='/home/cisco/nvmefudge/vggsound_1seconds',
+        video_dir='/home/cis/VGGSound_Splits',
         output_dir='./outputs',
-        batch_size=48,
+        batch_size=44,
         num_epochs=100,
         learning_rate=8e-4,
         use_wandb=True,
         num_vis_samples=20,
         gradient_accumulation_steps=1,
         vis_every=5000,
-        num_workers=12,
-        force_new_training=False,
+        num_workers=16,
+        force_new_training=True,
         unfreeze_hubert_epoch=2,
-        unfreeze_vit_epoch=5,
+        unfreeze_vit_epoch=2,
         save_every_steps=4000
     )
     trainer.train()
